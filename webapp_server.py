@@ -85,11 +85,30 @@ async def send_to_telegram(user_id, lat, lng):
     finally:
         await bot.session.close()
 
+
+async def save_photo_data_to_state(user_id, category, subcategory, description):
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.memory import MemoryStorage
+    
+    storage = MemoryStorage()
+    
+    try:
+        state = FSMContext(storage=storage, key=f"user_{user_id}")
+        await state.update_data(
+            category=category,
+            subcategory=subcategory,
+            description=description
+        )
+        logger.info(f"Saved to FSM: category={category}, subcategory={subcategory}")
+    except Exception as e:
+        logger.error(f"Error saving to FSM: {e}")
+
+
 @app.route('/upload-photo', methods=['POST'])
 def handle_photo_upload():
     import base64
     import requests
-    import random
+    import asyncio
     
     try:
         logger.info(f"Upload photo endpoint hit!")
@@ -107,12 +126,37 @@ def handle_photo_upload():
             logger.error("No photo data received!")
             return jsonify({'ok': False, 'error': 'No photo data'}), 400
         
-        # Mock AI analysis
-        from src.models.categories import CATEGORIES
-        category = random.choice(list(CATEGORIES.keys()))
-        subcategory = random.choice(CATEGORIES[category])
+        # Send processing message immediately
+        processing_response = requests.post(
+            f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+            json={
+                'chat_id': user_id,
+                'text': '🔄 <b>Processing image...</b>\n\nAI is analyzing your photo. This may take a few moments.',
+                'parse_mode': 'HTML'
+            },
+            timeout=5
+        )
+        logger.info(f"Processing message sent: {processing_response.status_code}")
         
-        logger.info(f"AI analysis: category={category}, subcategory={subcategory}")
+        # Real AI analysis with OpenAI Vision
+        logger.info("Starting AI analysis with OpenAI Vision...")
+        photo_data_url = f"data:image/jpeg;base64,{photo_base64}"
+        
+        from src.services.ai_vision_service import AIVisionService
+        ai_service = AIVisionService()
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        analysis = loop.run_until_complete(
+            ai_service.analyze_problem_photo(photo_url=photo_data_url)
+        )
+        loop.close()
+        
+        category = analysis['category']
+        subcategory = analysis['subcategory']
+        description = analysis['description']
+        
+        logger.info(f"AI analysis: category={category}, subcategory={subcategory}, description={description[:50]}...")
         
         # Decode photo
         photo_bytes = base64.b64decode(photo_base64)
@@ -138,7 +182,7 @@ def handle_photo_upload():
             f"📍 <b>Location:</b> {lat_display}, {lng_display}\n\n"
             f"🏷 <b>Category:</b> {category}\n"
             f"🔖 <b>Subcategory:</b> {subcategory}\n"
-            f"📝 <b>Description:</b> Maintenance needed\n\n"
+            f"📝 <b>Description:</b> {description}\n\n"
             f"Review your report and submit or change category."
         )
         
@@ -147,7 +191,7 @@ def handle_photo_upload():
         webapp_url = os.getenv("WEBAPP_URL", "")
         if webapp_url:
             base_url = webapp_url.rsplit('/', 1)[0]
-            edit_url = f"{base_url}/edit_description.html?desc={quote('Maintenance needed')}&cat={quote(category)}&subcat={quote(subcategory)}&lat={latitude}&lng={longitude}"
+            edit_url = f"{base_url}/edit_description.html?desc={quote(description)}&cat={quote(category)}&subcat={quote(subcategory)}&lat={latitude}&lng={longitude}"
             logger.info(f"Edit URL for upload-photo: {edit_url}")
         else:
             edit_url = ""
@@ -177,6 +221,20 @@ def handle_photo_upload():
         )
         
         logger.info(f"Message sent response: {message_response.status_code}, body: {message_response.text[:200]}")
+        
+        # Save to FSM state
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(
+            save_photo_data_to_state(
+                user_id=user_id,
+                category=category,
+                subcategory=subcategory,
+                description=description
+            )
+        )
+        loop.close()
+        
         logger.info(f"Complete! category={category}, subcategory={subcategory}, lat={latitude}, lng={longitude}")
         
         return jsonify({'ok': True})

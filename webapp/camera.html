@@ -163,6 +163,9 @@
                         lng = coords.longitude;
                     }
                     
+                    console.log('Sending photo, closing camera...');
+                    tg.close();
+                    
                     fetch('/upload-photo', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
@@ -174,13 +177,8 @@
                         })
                     }).then(function(response) {
                         console.log('Upload response:', response.status);
-                        return response.json();
-                    }).then(function(data) {
-                        console.log('Upload result:', data);
-                        tg.close();
                     }).catch(function(err) {
                         console.error('Upload error:', err);
-                        alert('Error: ' + err.message);
                     });
                 };
                 reader.readAsDataURL(blob);
@@ -212,6 +210,9 @@
                     lng = coords.longitude;
                 }
                 
+                console.log('Sending file photo, closing gallery...');
+                tg.close();
+                
                 fetch('/upload-photo', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -223,15 +224,8 @@
                     })
                 }).then(function(response) {
                     console.log('File upload response:', response.status);
-                    return response.json();
-                }).then(function(data) {
-                    console.log('File upload result:', data);
-                    if (data.ok) {
-                        tg.close();
-                    }
                 }).catch(function(err) {
                     console.error('File upload error:', err);
-                    tg.close();
                 });
             };
             reader.readAsDataURL(file);
