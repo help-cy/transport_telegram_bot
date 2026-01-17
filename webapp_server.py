@@ -42,17 +42,10 @@ def handle_location():
 
 async def send_to_telegram(user_id, lat, lng):
     from aiogram import Bot
-    from aiogram.fsm.context import FSMContext
-    from aiogram.fsm.storage.memory import MemoryStorage
     
-    storage = MemoryStorage()
     bot = Bot(token=BOT_TOKEN)
     
     try:
-        # Save location to FSM state
-        state = FSMContext(storage=storage, key=f"user_{user_id}")
-        await state.update_data(latitude=float(lat), longitude=float(lng))
-        
         message_text = (
             f"✅ Location received!\n\n"
             f"Latitude: {lat}\n"
@@ -67,11 +60,12 @@ async def send_to_telegram(user_id, lat, lng):
         
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         
+        # Pass location through callback_data
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="📷 Photo", callback_data="media_photo"),
-                    InlineKeyboardButton(text="🎵 Audio", callback_data="media_audio")
+                    InlineKeyboardButton(text="📷 Photo", callback_data=f"media_photo|{lat}|{lng}"),
+                    InlineKeyboardButton(text="🎵 Audio", callback_data=f"media_audio|{lat}|{lng}")
                 ]
             ]
         )
@@ -86,22 +80,6 @@ async def send_to_telegram(user_id, lat, lng):
         await bot.session.close()
 
 
-async def save_photo_data_to_state(user_id, category, subcategory, description):
-    from aiogram.fsm.context import FSMContext
-    from aiogram.fsm.storage.memory import MemoryStorage
-    
-    storage = MemoryStorage()
-    
-    try:
-        state = FSMContext(storage=storage, key=f"user_{user_id}")
-        await state.update_data(
-            category=category,
-            subcategory=subcategory,
-            description=description
-        )
-        logger.info(f"Saved to FSM: category={category}, subcategory={subcategory}")
-    except Exception as e:
-        logger.error(f"Error saving to FSM: {e}")
 
 
 @app.route('/upload-photo', methods=['POST'])
@@ -221,20 +199,6 @@ def handle_photo_upload():
         )
         
         logger.info(f"Message sent response: {message_response.status_code}, body: {message_response.text[:200]}")
-        
-        # Save to FSM state
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(
-            save_photo_data_to_state(
-                user_id=user_id,
-                category=category,
-                subcategory=subcategory,
-                description=description
-            )
-        )
-        loop.close()
-        
         logger.info(f"Complete! category={category}, subcategory={subcategory}, lat={latitude}, lng={longitude}")
         
         return jsonify({'ok': True})
@@ -306,6 +270,7 @@ def handle_update_description():
         )
         
         logger.info(f"Message sent: {response.status_code}")
+        logger.info(f"Updated: category={category}, subcategory={subcategory}, lat={latitude}, lng={longitude}")
         
         return jsonify({'ok': True})
         

@@ -300,6 +300,17 @@ async def handle_change_category(
         await state.update_data(latitude=latitude, longitude=longitude)
         logger.info(f"Saved coordinates: lat={latitude}, lng={longitude}")
     
+    # Also try to extract and save description from message text if available
+    if callback.message and callback.message.text:
+        import re
+        desc_match = re.search(r'📝 \*\*Description:\*\*\s*(.+?)(?:\n\n|$)', callback.message.text, re.DOTALL)
+        if not desc_match:
+            desc_match = re.search(r'📝 <b>Description:</b>\s*(.+?)(?:\n\n|$)', callback.message.text, re.DOTALL)
+        if desc_match:
+            description = desc_match.group(1).strip()
+            await state.update_data(description=description)
+            logger.info(f"Extracted and saved description from message")
+    
     from src.bot.keyboards.inline import create_categories_keyboard
     
     categories_keyboard = create_categories_keyboard()
@@ -475,9 +486,10 @@ async def handle_submit_report(
     await state.clear()
 
 
-@router.callback_query(F.data == "media_photo")
+@router.callback_query(F.data.startswith("media_photo"))
 async def handle_photo_button_click(
-    callback: CallbackQuery
+    callback: CallbackQuery,
+    state: FSMContext
 ) -> None:
     user = callback.from_user
     
@@ -485,8 +497,16 @@ async def handle_photo_button_click(
         return
     
     logger.info(
-        msg=f"User {user.id} clicked Photo button"
+        msg=f"User {user.id} clicked Photo button, data: {callback.data}"
     )
+    
+    # Extract and save location from callback_data
+    parts = callback.data.split("|")
+    if len(parts) == 3:
+        latitude = float(parts[1])
+        longitude = float(parts[2])
+        await state.update_data(latitude=latitude, longitude=longitude)
+        logger.info(f"Saved location from callback: lat={latitude}, lng={longitude}")
     
     camera_url = settings.bot.webapp_url.replace("map.html", "camera.html") if settings.bot.webapp_url else ""
     
@@ -516,9 +536,10 @@ async def handle_photo_button_click(
     await callback.answer()
 
 
-@router.callback_query(F.data == "media_audio")
+@router.callback_query(F.data.startswith("media_audio"))
 async def handle_audio_button_click(
-    callback: CallbackQuery
+    callback: CallbackQuery,
+    state: FSMContext
 ) -> None:
     user = callback.from_user
     
@@ -526,8 +547,16 @@ async def handle_audio_button_click(
         return
     
     logger.info(
-        msg=f"User {user.id} clicked Audio button"
+        msg=f"User {user.id} clicked Audio button, data: {callback.data}"
     )
+    
+    # Extract and save location from callback_data
+    parts = callback.data.split("|")
+    if len(parts) == 3:
+        latitude = float(parts[1])
+        longitude = float(parts[2])
+        await state.update_data(latitude=latitude, longitude=longitude)
+        logger.info(f"Saved location from callback: lat={latitude}, lng={longitude}")
     
     instruction_message = (
         f"🎵 <b>Audio Report</b>\n\n"
@@ -625,21 +654,57 @@ async def handle_audio(
         msg=f"User {user.id} sent audio/voice"
     )
     
+    # Show processing message
+    await message.answer(
+        text="🔄 <b>Processing audio...</b>\n\nTranscribing and analyzing your voice message. This may take a few moments.",
+        parse_mode="HTML"
+    )
+    
     data = await state.get_data()
     latitude = data.get("latitude", 35.0)
     longitude = data.get("longitude", 33.0)
     
     from src.services.ai_vision_service import AIVisionService
     from src.bot.keyboards.inline import create_report_review_keyboard
+    import tempfile
+    import os
     
-    ai_service = AIVisionService()
-    analysis = await ai_service.analyze_problem_photo(
-        photo_url=""
+    # Get audio file
+    audio = message.audio or message.voice
+    if not audio:
+        await message.answer("❌ No audio file found")
+        return
+    
+    # Download audio file
+    bot = message.bot
+    audio_file = await bot.download(
+        file=audio.file_id
     )
     
-    await message.answer(
-        text="🎵 Audio received"
-    )
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".ogg"
+    ) as temp_audio:
+        if audio_file:
+            temp_audio.write(audio_file.read())
+            temp_audio_path = temp_audio.name
+    
+    try:
+        # Analyze audio with OpenAI Whisper + GPT
+        ai_service = AIVisionService()
+        analysis = await ai_service.analyze_problem_audio(
+            audio_file_path=temp_audio_path
+        )
+        
+        logger.info(
+            msg=f"Audio analysis complete: {analysis['category']} -> {analysis['subcategory']}"
+        )
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
     
     lat_display = f"{int(latitude)}.{str(latitude).split('.')[1][:6] if '.' in str(latitude) else 'xxxxxx'}"
     lng_display = f"{int(longitude)}.{str(longitude).split('.')[1][:6] if '.' in str(longitude) else 'xxxxxx'}"
