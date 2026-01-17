@@ -142,13 +142,27 @@ def handle_photo_upload():
             f"Review your report and submit or change category."
         )
         
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔄 Change Category", "callback_data": f"chcat|{latitude}|{longitude}"}],
-                [{"text": "✏️ Edit Description", "callback_data": f"eddesc|{category}|{subcategory}|{latitude}|{longitude}"}],
-                [{"text": "✅ Submit", "callback_data": "submit_report"}]
-            ]
-        }
+        # Build edit description URL
+        from urllib.parse import quote
+        webapp_url = os.getenv("WEBAPP_URL", "")
+        if webapp_url:
+            base_url = webapp_url.rsplit('/', 1)[0]
+            edit_url = f"{base_url}/edit_description.html?desc={quote('Maintenance needed')}&cat={quote(category)}&subcat={quote(subcategory)}&lat={latitude}&lng={longitude}"
+            logger.info(f"Edit URL for upload-photo: {edit_url}")
+        else:
+            edit_url = ""
+            logger.warning("No WEBAPP_URL in env!")
+        
+        keyboard_buttons = [
+            [{"text": "🔄 Change Category", "callback_data": f"chcat|{latitude}|{longitude}"}],
+            [{"text": "✅ Submit", "callback_data": "submit_report"}]
+        ]
+        
+        # Add Edit Description button only if webapp_url exists
+        if edit_url:
+            keyboard_buttons.insert(1, [{"text": "✏️ Edit Description", "web_app": {"url": edit_url}}])
+        
+        keyboard = {"inline_keyboard": keyboard_buttons}
         
         logger.info(f"Sending message with buttons...")
         message_response = requests.post(
@@ -201,13 +215,27 @@ def handle_update_description():
             f"Review your report and submit."
         )
         
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔄 Change Category", "callback_data": f"chcat|{latitude}|{longitude}"}],
-                [{"text": "✏️ Edit Description", "callback_data": f"eddesc|{category}|{subcategory}|{latitude}|{longitude}"}],
-                [{"text": "✅ Submit", "callback_data": "submit_report"}]
-            ]
-        }
+        # Build edit description URL
+        from urllib.parse import quote
+        webapp_url = os.getenv("WEBAPP_URL", "")
+        if webapp_url:
+            base_url = webapp_url.rsplit('/', 1)[0]
+            edit_url = f"{base_url}/edit_description.html?desc={quote(description)}&cat={quote(category)}&subcat={quote(subcategory)}&lat={latitude}&lng={longitude}"
+            logger.info(f"Edit URL for update-description: {edit_url}")
+        else:
+            edit_url = ""
+            logger.warning("No WEBAPP_URL in env!")
+        
+        keyboard_buttons = [
+            [{"text": "🔄 Change Category", "callback_data": f"chcat|{latitude}|{longitude}"}],
+            [{"text": "✅ Submit", "callback_data": "submit_report"}]
+        ]
+        
+        # Add Edit Description button only if webapp_url exists
+        if edit_url:
+            keyboard_buttons.insert(1, [{"text": "✏️ Edit Description", "web_app": {"url": edit_url}}])
+        
+        keyboard = {"inline_keyboard": keyboard_buttons}
         
         response = requests.post(
             f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',

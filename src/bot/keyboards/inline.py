@@ -84,27 +84,32 @@ def create_report_review_keyboard(
         edit_url = ""
         logger.warning("No webapp_url provided!")
     
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text="🔄 Change Category",
-                callback_data=f"chcat|{latitude}|{longitude}"
-            )
-        ],
-        [
+    keyboard = []
+    
+    # Change Category button
+    keyboard.append([
+        InlineKeyboardButton(
+            text="🔄 Change Category",
+            callback_data=f"chcat|{latitude}|{longitude}"
+        )
+    ])
+    
+    # Edit Description button - only add if webapp_url exists
+    if edit_url:
+        keyboard.append([
             InlineKeyboardButton(
                 text="✏️ Edit Description",
-                web_app=WebAppInfo(url=edit_url) if edit_url else None,
-                callback_data="edit_desc_fallback" if not edit_url else None
+                web_app=WebAppInfo(url=edit_url)
             )
-        ],
-        [
-            InlineKeyboardButton(
-                text="✅ Submit",
-                callback_data="submit_report"
-            )
-        ]
-    ]
+        ])
+    
+    # Submit button
+    keyboard.append([
+        InlineKeyboardButton(
+            text="✅ Submit",
+            callback_data="submit_report"
+        )
+    ])
     
     return InlineKeyboardMarkup(
         inline_keyboard=keyboard
