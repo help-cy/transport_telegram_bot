@@ -44,11 +44,19 @@
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.8);
             padding: 15px 25px;
             border-radius: 10px;
             text-align: center;
             z-index: 100;
+            color: #ffffff;
+            font-weight: 500;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        
+        .info strong {
+            color: #ffffff;
+            font-size: 16px;
         }
         
         .gallery-button {
@@ -76,6 +84,45 @@
         input[type="file"] {
             display: none;
         }
+        
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            flex-direction: column;
+        }
+        
+        .loader-overlay.active {
+            display: flex;
+        }
+        
+        .loader {
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-top: 5px solid #2196F3;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loader-text {
+            margin-top: 20px;
+            font-size: 18px;
+            color: white;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -89,6 +136,11 @@
     </div>
     <button class="gallery-button" id="galleryButton">🖼️</button>
     <input type="file" id="fileInput" accept="image/*">
+    
+    <div class="loader-overlay" id="loaderOverlay">
+        <div class="loader"></div>
+        <div class="loader-text">🔄 Processing photo...<br>AI is analyzing your image</div>
+    </div>
 
     <script>
         let tg = window.Telegram.WebApp;
@@ -104,6 +156,7 @@
         
         let stream = null;
         let useFileInput = false;
+        let isProcessing = false;
         
         async function startCamera() {
             try {
@@ -131,10 +184,19 @@
         });
         
         tg.MainButton.onClick(function() {
+            if (isProcessing) {
+                tg.showAlert('Please wait, processing previous photo...');
+                return;
+            }
+            
             if (useFileInput) {
                 fileInput.click();
                 return;
             }
+            
+            isProcessing = true;
+            tg.MainButton.disable();
+            tg.MainButton.showProgress();
             
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -163,8 +225,8 @@
                         lng = coords.longitude;
                     }
                     
-                    console.log('Sending photo, closing camera...');
-                    tg.close();
+                    console.log('Sending photo...');
+                    document.getElementById('loaderOverlay').classList.add('active');
                     
                     fetch('/upload-photo', {
                         method: 'POST',
@@ -177,8 +239,15 @@
                         })
                     }).then(function(response) {
                         console.log('Upload response:', response.status);
+                        isProcessing = false;
+                        tg.close();
                     }).catch(function(err) {
                         console.error('Upload error:', err);
+                        isProcessing = false;
+                        tg.MainButton.hideProgress();
+                        tg.MainButton.enable();
+                        document.getElementById('loaderOverlay').classList.remove('active');
+                        tg.showAlert('Error uploading photo. Please try again.');
                     });
                 };
                 reader.readAsDataURL(blob);
@@ -191,6 +260,15 @@
                 console.log('No file selected');
                 return;
             }
+            
+            if (isProcessing) {
+                tg.showAlert('Please wait, processing previous photo...');
+                return;
+            }
+            
+            isProcessing = true;
+            tg.MainButton.disable();
+            tg.MainButton.showProgress();
             
             console.log('File selected:', file.name);
             
@@ -210,8 +288,8 @@
                     lng = coords.longitude;
                 }
                 
-                console.log('Sending file photo, closing gallery...');
-                tg.close();
+                console.log('Sending file photo...');
+                document.getElementById('loaderOverlay').classList.add('active');
                 
                 fetch('/upload-photo', {
                     method: 'POST',
@@ -224,8 +302,15 @@
                     })
                 }).then(function(response) {
                     console.log('File upload response:', response.status);
+                    isProcessing = false;
+                    tg.close();
                 }).catch(function(err) {
                     console.error('File upload error:', err);
+                    isProcessing = false;
+                    tg.MainButton.hideProgress();
+                    tg.MainButton.enable();
+                    document.getElementById('loaderOverlay').classList.remove('active');
+                    tg.showAlert('Error uploading photo. Please try again.');
                 });
             };
             reader.readAsDataURL(file);
