@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Location</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            overflow: hidden;
+        }
+        
+        #map {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: var(--tg-theme-bg-color, white);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        
+        .info-panel h3 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .info-panel p {
+            margin: 0;
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #999);
+        }
+        
+        .coords {
+            margin-top: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 8px;
+            border-radius: 6px;
+        }
+        
+        .marker-icon {
+            background: none;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="info-panel">
+        <h3>📍 Select Your Location</h3>
+        <p>Drag the marker to adjust your position</p>
+        <div class="coords" id="coords">Loading...</div>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        
+        console.log('Telegram WebApp object:', tg);
+        console.log('Is WebApp available:', !!tg.initData);
+        
+        tg.expand();
+        tg.ready();
+        
+        document.getElementById('coords').textContent = 'WebApp initialized: ' + (tg.initData ? 'YES' : 'NO');
+        
+        let selectedLat = 35.1856;
+        let selectedLng = 33.3823;
+        let marker;
+        
+        const map = L.map('map').setView([selectedLat, selectedLng], 13);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+        
+        const blueIcon = L.icon({
+            iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCAzMiA0OCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTYgMEMxMC40OCAwIDYgNC40OCA2IDEwYzAgNy41IDEwIDE4IDEwIDE4czEwLTEwLjUgMTAtMThjMC01LjUyLTQuNDgtMTAtMTAtMTB6bTAgMTRjLTIuMjEgMC00LTEuNzktNC00czEuNzktNCA0LTQgNCAxLjc5IDQgNC0xLjc5IDQtNCA0eiIgZmlsbD0iIzIxOTZGMyIvPjwvc3ZnPg==',
+            iconSize: [32, 48],
+            iconAnchor: [16, 48],
+            popupAnchor: [0, -48]
+        });
+        
+        marker = L.marker([selectedLat, selectedLng], {
+            icon: blueIcon,
+            draggable: true
+        }).addTo(map);
+        
+        function updateCoords(lat, lng) {
+            selectedLat = lat;
+            selectedLng = lng;
+            document.getElementById('coords').textContent = 
+                `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+        }
+        
+        updateCoords(selectedLat, selectedLng);
+        
+        marker.on('dragend', function(e) {
+            const pos = marker.getLatLng();
+            updateCoords(pos.lat, pos.lng);
+        });
+        
+        map.on('click', function(e) {
+            marker.setLatLng(e.latlng);
+            updateCoords(e.latlng.lat, e.latlng.lng);
+        });
+        
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    map.setView([lat, lng], 15);
+                    marker.setLatLng([lat, lng]);
+                    updateCoords(lat, lng);
+                },
+                function(error) {
+                    console.log('Geolocation error:', error);
+                }
+            );
+        }
+        
+        if (!tg.initData) {
+            alert('ERROR: Not running inside Telegram WebApp!');
+            document.getElementById('coords').textContent = 'ERROR: Not in Telegram!';
+        }
+        
+        tg.MainButton.text = "📍 Send Location";
+        tg.MainButton.color = "#2196F3";
+        tg.MainButton.textColor = "#FFFFFF";
+        
+        tg.MainButton.onClick(function() {
+            const lat = selectedLat.toFixed(6);
+            const lng = selectedLng.toFixed(6);
+            
+            tg.MainButton.text = "Sending...";
+            tg.MainButton.showProgress();
+            
+            const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
+            
+            if (!userId) {
+                alert('ERROR: No user ID');
+                return;
+            }
+            
+            // Save location to localStorage for camera
+            localStorage.setItem('user_location', JSON.stringify({
+                latitude: parseFloat(lat),
+                longitude: parseFloat(lng)
+            }));
+            
+            fetch('/location', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    user_id: userId,
+                    latitude: lat,
+                    longitude: lng
+                })
+            }).then(function() {
+                tg.close();
+            }).catch(function(err) {
+                alert('Error: ' + err.message);
+                tg.MainButton.hideProgress();
+                tg.MainButton.text = "Send Location";
+            });
+        });
+        
+        tg.MainButton.show();
+        console.log('MainButton initialized and shown');
+    </script>
+</body>
+</html>

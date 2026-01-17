@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take Photo</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #000);
+            color: var(--tg-theme-text-color, #fff);
+            overflow: hidden;
+        }
+        
+        #camera-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 100;
+        }
+        
+        .gallery-button {
+            position: fixed;
+            bottom: 70px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255,255,255,0.9);
+            color: #2196F3;
+            border: 2px solid #2196F3;
+            border-radius: 50%;
+            font-size: 28px;
+            cursor: pointer;
+            z-index: 1001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        .gallery-button:active {
+            background-color: rgba(255,255,255,0.7);
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="camera-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div class="info">
+            <strong>📸 Photo Report</strong><br>
+            Position your camera and take a clear photo of the problem
+        </div>
+    </div>
+    <button class="gallery-button" id="galleryButton">🖼️</button>
+    <input type="file" id="fileInput" accept="image/*">
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        
+        tg.expand();
+        tg.ready();
+        
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('fileInput');
+        const galleryButton = document.getElementById('galleryButton');
+        
+        let stream = null;
+        let useFileInput = false;
+        
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                video.srcObject = stream;
+                video.play();
+            } catch (err) {
+                console.log('Camera access denied, using file input:', err);
+                useFileInput = true;
+                fileInput.click();
+            }
+        }
+        
+        startCamera();
+        
+        tg.MainButton.text = "📸 Take Photo";
+        tg.MainButton.color = "#2196F3";
+        
+        galleryButton.addEventListener('click', function() {
+            console.log('Gallery button clicked');
+            fileInput.click();
+        });
+        
+        tg.MainButton.onClick(function() {
+            if (useFileInput) {
+                fileInput.click();
+                return;
+            }
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            canvas.toBlob(function(blob) {
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    const base64 = reader.result.split(',')[1];
+                    
+                    const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
+                    
+                    console.log('Sending photo, userId:', userId);
+                    console.log('Photo size:', base64.length);
+                    
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                    
+                    // Get location from localStorage if available
+                    const locationData = localStorage.getItem('user_location');
+                    let lat = 35.0, lng = 33.0;
+                    if (locationData) {
+                        const coords = JSON.parse(locationData);
+                        lat = coords.latitude;
+                        lng = coords.longitude;
+                    }
+                    
+                    fetch('/upload-photo', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            user_id: userId,
+                            photo: base64,
+                            latitude: lat,
+                            longitude: lng
+                        })
+                    }).then(function(response) {
+                        console.log('Upload response:', response.status);
+                        return response.json();
+                    }).then(function(data) {
+                        console.log('Upload result:', data);
+                        tg.close();
+                    }).catch(function(err) {
+                        console.error('Upload error:', err);
+                        alert('Error: ' + err.message);
+                    });
+                };
+                reader.readAsDataURL(blob);
+            }, 'image/jpeg', 0.9);
+        });
+        
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) {
+                console.log('No file selected');
+                return;
+            }
+            
+            console.log('File selected:', file.name);
+            
+            const reader = new FileReader();
+            reader.onloadend = function() {
+                const base64 = reader.result.split(',')[1];
+                const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
+                
+                console.log('Sending file photo, userId:', userId);
+                
+                // Get location from localStorage if available
+                const locationData = localStorage.getItem('user_location');
+                let lat = 35.0, lng = 33.0;
+                if (locationData) {
+                    const coords = JSON.parse(locationData);
+                    lat = coords.latitude;
+                    lng = coords.longitude;
+                }
+                
+                fetch('/upload-photo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        user_id: userId,
+                        photo: base64,
+                        latitude: lat,
+                        longitude: lng
+                    })
+                }).then(function(response) {
+                    console.log('File upload response:', response.status);
+                    return response.json();
+                }).then(function(data) {
+                    console.log('File upload result:', data);
+                    if (data.ok) {
+                        tg.close();
+                    }
+                }).catch(function(err) {
+                    console.error('File upload error:', err);
+                    tg.close();
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        tg.MainButton.show();
+    </script>
+</body>
+</html>
